@@ -2,49 +2,50 @@ class RealtimeChat {
     constructor() {
         this.socket = null;
         this.username = '';
+        this.clientId = null;
         this.currentTypingUsers = new Map();
         this.messageInput = document.getElementById('messageInput');
         this.messagesContainer = document.getElementById('messages');
         this.usernameInput = document.getElementById('username');
-        
+
         this.init();
     }
-    
+
     init() {
         this.connectWebSocket();
         this.setupEventListeners();
     }
-    
+
     connectWebSocket() {
         this.socket = new WebSocket('ws://localhost:8080');
-        
+
         this.socket.onopen = () => {
             console.log('Connected to server');
             this.addSystemMessage('Connected to chat server');
         };
-        
+
         this.socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             this.handleMessage(data);
         };
-        
+
         this.socket.onclose = () => {
             console.log('Disconnected from server');
             this.addSystemMessage('Disconnected from server. Trying to reconnect...');
             setTimeout(() => this.connectWebSocket(), 3000);
         };
-        
+
         this.socket.onerror = (error) => {
             console.error('WebSocket error:', error);
             this.addSystemMessage('Connection error occurred');
         };
     }
-    
+
     setupEventListeners() {
         this.messageInput.addEventListener('input', (e) => {
             this.handleTyping(e.target.value);
         });
-        
+
         this.usernameInput.addEventListener('change', (e) => {
             this.username = e.target.value.trim() || 'Anonymous';
             this.sendMessage({
@@ -52,7 +53,7 @@ class RealtimeChat {
                 username: this.username
             });
         });
-        
+
         this.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -60,12 +61,12 @@ class RealtimeChat {
             }
         });
     }
-    
+
     handleTyping(text) {
         if (!this.username) {
             this.username = this.usernameInput.value.trim() || 'Anonymous';
         }
-        
+
         this.sendMessage({
             type: 'typing',
             username: this.username,
@@ -73,7 +74,7 @@ class RealtimeChat {
             timestamp: Date.now()
         });
     }
-    
+
     sendFinalMessage() {
         const text = this.messageInput.value.trim();
         if (text) {
@@ -86,15 +87,20 @@ class RealtimeChat {
             this.messageInput.value = '';
         }
     }
-    
+
     sendMessage(data) {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify(data));
         }
     }
-    
+
     handleMessage(data) {
         switch (data.type) {
+            case 'welcome':
+                // Store our clientId when we first connect
+                this.clientId = data.clientId;
+                console.log('Received clientId:', this.clientId);
+                break;
             case 'typing':
                 this.updateTypingMessage(data);
                 break;
@@ -107,12 +113,13 @@ class RealtimeChat {
                 break;
         }
     }
-    
+
     updateTypingMessage(data) {
-        if (data.username === this.username) return;
-        
+        // Filter out our own typing messages using clientId
+        if (data.clientId && data.clientId === this.clientId) return;
+
         let messageElement = this.currentTypingUsers.get(data.username);
-        
+
         if (!messageElement) {
             messageElement = document.createElement('div');
             messageElement.className = 'message typing-message';
@@ -120,12 +127,12 @@ class RealtimeChat {
             this.currentTypingUsers.set(data.username, messageElement);
             this.messagesContainer.appendChild(messageElement);
         }
-        
+
         if (data.text.trim() === '') {
             this.removeTypingMessage(data.username);
             return;
         }
-        
+
         messageElement.innerHTML = `
             <div class="message-header">
                 <span class="username">${this.escapeHtml(data.username)}</span>
@@ -133,10 +140,10 @@ class RealtimeChat {
             </div>
             <div class="message-content">${this.escapeHtml(data.text)}</div>
         `;
-        
+
         this.scrollToBottom();
     }
-    
+
     addFinalMessage(data) {
         const messageElement = document.createElement('div');
         messageElement.className = 'message final-message';
@@ -147,11 +154,11 @@ class RealtimeChat {
             </div>
             <div class="message-content">${this.escapeHtml(data.text)}</div>
         `;
-        
+
         this.messagesContainer.appendChild(messageElement);
         this.scrollToBottom();
     }
-    
+
     removeTypingMessage(username) {
         const messageElement = this.currentTypingUsers.get(username);
         if (messageElement && messageElement.parentNode) {
@@ -159,7 +166,7 @@ class RealtimeChat {
             this.currentTypingUsers.delete(username);
         }
     }
-    
+
     addSystemMessage(text) {
         const messageElement = document.createElement('div');
         messageElement.className = 'message system-message';
@@ -167,17 +174,17 @@ class RealtimeChat {
         this.messagesContainer.appendChild(messageElement);
         this.scrollToBottom();
     }
-    
+
     formatTime(timestamp) {
         return new Date(timestamp).toLocaleTimeString();
     }
-    
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
-    
+
     scrollToBottom() {
         this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     }

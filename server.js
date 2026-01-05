@@ -15,9 +15,15 @@ const typingTimeouts = new Map();
 wss.on('connection', (ws) => {
     const clientId = generateClientId();
     clients.set(clientId, { ws, username: 'Anonymous' });
-    
+
     console.log(`Client ${clientId} connected`);
-    
+
+    // Send the clientId to the newly connected client
+    ws.send(JSON.stringify({
+        type: 'welcome',
+        clientId: clientId
+    }));
+
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
@@ -26,7 +32,7 @@ wss.on('connection', (ws) => {
             console.error('Error parsing message:', error);
         }
     });
-    
+
     ws.on('close', () => {
         console.log(`Client ${clientId} disconnected`);
         const client = clients.get(clientId);
@@ -40,7 +46,7 @@ wss.on('connection', (ws) => {
         clearTimeout(typingTimeouts.get(clientId));
         typingTimeouts.delete(clientId);
     });
-    
+
     ws.on('error', (error) => {
         console.error(`WebSocket error for client ${clientId}:`, error);
     });
@@ -49,24 +55,25 @@ wss.on('connection', (ws) => {
 function handleMessage(clientId, data) {
     const client = clients.get(clientId);
     if (!client) return;
-    
+
     switch (data.type) {
         case 'username_change':
             client.username = data.username;
             break;
-            
+
         case 'typing':
             client.username = data.username;
-            
+
             broadcastToOthers(clientId, {
                 type: 'typing',
                 username: data.username,
                 text: data.text,
-                timestamp: data.timestamp
+                timestamp: data.timestamp,
+                clientId: clientId
             });
-            
+
             clearTimeout(typingTimeouts.get(clientId));
-            
+
             if (data.text.trim() === '') {
                 broadcastToOthers(clientId, {
                     type: 'user_stopped_typing',
@@ -81,17 +88,18 @@ function handleMessage(clientId, data) {
                 }, 2000));
             }
             break;
-            
+
         case 'message':
             client.username = data.username;
-            
+
             broadcastToAll({
                 type: 'message',
                 username: data.username,
                 text: data.text,
-                timestamp: data.timestamp
+                timestamp: data.timestamp,
+                clientId: clientId
             });
-            
+
             clearTimeout(typingTimeouts.get(clientId));
             broadcastToOthers(clientId, {
                 type: 'user_stopped_typing',
